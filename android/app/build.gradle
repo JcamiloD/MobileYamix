@@ -1,0 +1,80 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'dev.flutter.flutter-gradle-plugin'
+    // Comenta temporalmente esta línea para verificar si el problema se resuelve
+    // id 'com.android.library'
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader("UTF-8") { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty("flutter.versionCode") ?: "1"
+def flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0"
+
+ext {
+    kotlin_version = '1.8.0' // Actualiza con la versión correcta de Kotlin
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlin_version"
+    // Otras dependencias de Kotlin y bibliotecas relacionadas
+    implementation "androidx.appcompat:appcompat:1.3.1"
+    implementation "com.google.android.material:material:1.5.0"
+    implementation "androidx.constraintlayout:constraintlayout:2.1.0"
+    // Otras dependencias necesarias para tu proyecto
+}
+   def keystoreProperties = new Properties()
+   def keystorePropertiesFile = rootProject.file('key.properties')
+   if (keystorePropertiesFile.exists()) {
+       keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+   }
+   android {
+    namespace = "com.example.yamix_phone"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '1.8' // Ajusta según la compatibilidad de tu proyecto con Java
+    }
+
+    defaultConfig {
+        applicationId = "com.example.yamix_phone"
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutterVersionCode.toInteger()
+        versionName = flutterVersionName
+    }
+    signingConfigs {
+       release {
+           keyAlias keystoreProperties['keyAlias']
+           keyPassword keystoreProperties['keyPassword']
+           storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+           storePassword keystoreProperties['storePassword']
+       }
+   }
+   buildTypes {
+      release {
+           signingConfig signingConfigs.debug
+           signingConfig signingConfigs.release
+      }
+   }
+}
+
+
+
+flutter {
+    source = "../.." // Ruta al proyecto Flutter
+}

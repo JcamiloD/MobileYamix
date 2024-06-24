@@ -1,0 +1,4 @@
+#Mon Jun 17 18:59:18 COT 2024
+base.0=C\:\\Users\\CAMILO\\Documents\\SENA\\5trimestre\\Moviles\\yamix_phone\\android\\app\\build\\intermediates\\dex\\release\\minifyReleaseWithR8\\classes.dex
+path.0=classes.dex
+renamed.0=classes.dex
