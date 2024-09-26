@@ -1,12 +1,7 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
-import 'package:intl/intl.dart';
 import 'package:timezone/data/latest.dart' as tz;
-import 'package:timezone/standalone.dart' as tz;
 import 'package:http/http.dart' as http;
-import 'reset_password.dart';
+import 'dart:convert';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -16,10 +11,11 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  bool _showCodeInput = false;
+  bool _showCodeAndPasswordInput = false;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _codeController = TextEditingController();
-  String _generatedCode = '';
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
   String _userEmail = '';
 
   @override
@@ -32,89 +28,97 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   void dispose() {
     _emailController.dispose();
     _codeController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  // Función para enviar el correo con el código de recuperación
   Future<void> _sendRecoveryCode() async {
     String email = _emailController.text;
 
     if (email.isNotEmpty) {
-      final response = await http.get(Uri.parse('https://fullrestapi.onrender.com/user/check-email/$email'));
+      final response = await http.get(Uri.parse('http://192.168.27.228:4000/api/verificarEmail/$email'));
 
       if (response.statusCode == 200) {
-        String username = 'yamix892@gmail.com';
-        String password = 'btqn ltln mahm ohrv';
+        // Generar el código de recuperación en el servidor
+        final responseCode = await http.post(
+          Uri.parse('http://192.168.27.228:4000/api/enviar-codigo'), // Cambia esto según tu API
+          headers: <String, String>{
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: jsonEncode(<String, String>{
+            'email': email,
+          }),
+        );
 
-        final smtpServer = gmail(username, password);
-        final colombiaTimeZone = tz.getLocation('America/Bogota');
-        final now = tz.TZDateTime.now(colombiaTimeZone);
-        final formattedDate = DateFormat('hh:mm a').format(now);
-
-        _generatedCode = (Random().nextInt(900000) + 100000).toString();
-
-        final message = Message()
-          ..from = Address(username, '🥷🏽 YAMIX 🥷🏽')
-          ..recipients.add(email)
-          ..subject = 'Código de un solo uso :: $formattedDate'
-          ..text = 'Tu código de recuperación es: $_generatedCode'
-          ..html = "<p>Tu código de recuperación es: <b>$_generatedCode</b></p>";
-
-        try {
-          final sendReport = await send(message, smtpServer);
-          print('Message sent: $sendReport');
-
-          _userEmail = email;
-
-          if (mounted) {
-            setState(() {
-              _showCodeInput = true;
-            });
-          }
-
+        if (responseCode.statusCode == 200) {
+          setState(() {
+            _showCodeAndPasswordInput = true;
+            _userEmail = email;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Código de recuperación enviado.')),
           );
-        } on MailerException catch (e) {
-          print('Mensasje no enviado.');
-          for (var p in e.problems) {
-            print('problema: ${p.code}: ${p.msg}');
-          }
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al enviar el código de recuperación: ${e.toString()}')),
+            const SnackBar(content: Text('Error al enviar el código de recuperación.')),
           );
         }
       } else if (response.statusCode == 404) {
-        // El correo no existe
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Correo no encontrado.')),
         );
       } else {
-        // Error al verificar el correo
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error al verificar el correo.')),
         );
       }
     } else {
-      if (mounted) {
-        setState(() {
-          _showCodeInput = false;
-        });
-      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor ingresa tu correo electrónico.')),
       );
     }
   }
 
-  void _onSubmitCode() {
-    if (_codeController.text == _generatedCode) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => ResetPasswordScreen(userId: _userEmail)),
-      );
+  // Función para verificar el código y restablecer la contraseña
+  Future<void> _verifyAndResetPassword() async {
+    String code = _codeController.text;
+    String password = _passwordController.text;
+    String confirmPassword = _confirmPasswordController.text;
+
+    if (code.isNotEmpty && password.isNotEmpty && confirmPassword.isNotEmpty) {
+      if (password == confirmPassword) {
+        final response = await http.post(
+          Uri.parse('http://192.168.27.228:4000/api/verificarCodigo'), // Cambia esto según tu API
+          headers: <String, String>{
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: jsonEncode(<String, String>{
+            'email': _userEmail,
+            'codigo': code,
+            'nuevaContraseña': password,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Contraseña restablecida correctamente.')),
+          );
+          Navigator.pop(context); // Redirigir a la pantalla principal u otra pantalla
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Código de recuperación incorrecto.')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Las contraseñas no coinciden.')),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Código de recuperación incorrecto.')),
+        const SnackBar(content: Text('Por favor completa todos los campos.')),
       );
     }
   }
@@ -219,7 +223,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                     ),
                     const SizedBox(height: 70),
-                    if (_showCodeInput)
+                    if (_showCodeAndPasswordInput)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -234,8 +238,32 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
+                          TextField(
+                            controller: _passwordController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nueva Contraseña',
+                              labelStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xffB81736),
+                              ),
+                            ),
+                            obscureText: true,
+                          ),
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _confirmPasswordController,
+                            decoration: const InputDecoration(
+                              labelText: 'Confirmar Contraseña',
+                              labelStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xffB81736),
+                              ),
+                            ),
+                            obscureText: true,
+                          ),
+                          const SizedBox(height: 20),
                           GestureDetector(
-                            onTap: _onSubmitCode,
+                            onTap: _verifyAndResetPassword,
                             child: Container(
                               height: 55,
                               decoration: BoxDecoration(
@@ -247,7 +275,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               ),
                               child: const Center(
                                 child: Text(
-                                  'Enviar Código',
+                                  'Enviar',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 20,
@@ -259,7 +287,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ),
                         ],
                       ),
-                    const SizedBox(height: 90),
                   ],
                 ),
               ),

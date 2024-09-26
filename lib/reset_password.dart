@@ -18,7 +18,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   Future<void> _onSubmit() async {
     if (_newPasswordController.text == _confirmPasswordController.text) {
-      String apiUrl = 'http://192.168.1.6:3000/user/reset/${widget.userId}';
+      String apiUrl = 'http://192.168.27.228:3000/user/reset/${widget.userId}';
       
       Map<String, String> body = {
         'contraseña': _newPasswordController.text,

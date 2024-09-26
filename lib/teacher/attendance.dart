@@ -38,18 +38,9 @@ class AsistenciaScreen extends StatelessWidget {
             Expanded(
               child: ListView(
                 children: [
-                  AsistenciaCard(
-                    titulo: 'Mixtas',
-                    clase: 'Mixtas',  
-                  ),
-                  AsistenciaCard(
-                    titulo: 'Boxeo',
-                    clase: 'Boxeo',
-                  ),
-                  AsistenciaCard(
-                    titulo: 'Parkour',
-                    clase: 'Parkour',
-                  ),
+                  AsistenciaCard(titulo: 'Mixtas', clase: 'Mixtas'),
+                  AsistenciaCard(titulo: 'Boxeo', clase: 'boxeo'),
+                  AsistenciaCard(titulo: 'Parkour', clase: 'parkour'),
                 ],
               ),
             ),
@@ -101,91 +92,164 @@ class DetalleAsistenciaScreen extends StatefulWidget {
 }
 
 class _DetalleAsistenciaScreenState extends State<DetalleAsistenciaScreen> {
-  List<Asistencia> asistencias = [];
+  List<Estudiante> estudiantes = [];
   bool isLoading = true;
   TextEditingController fechaController = TextEditingController();
+  String? fecha; // Almacena la fecha
+  int? idClase; // Almacena el id_clase
 
   @override
   void initState() {
     super.initState();
-    fetchAsistencia(widget.clase); // Llama fetchAsistencia con widget.clase
+    fetchAsistencia(); // Llama al método sin pasar la clase
   }
 
-  Future<void> fetchAsistencia(String clase, {String? fecha}) async {
+  Future<void> fetchAsistencia({String? fecha}) async {
     setState(() {
       isLoading = true;
     });
 
     try {
-      String baseUrl = 'https://fullrestapi.onrender.com/asistenciasC';
-      Map<String, String> queryParams = {'clase': clase};
-      if (fecha != null && fecha.isNotEmpty) {
-        DateTime parsedDate = DateTime.parse(fecha);
-        String formattedDate =
-            '${parsedDate.year}-${parsedDate.month}-${parsedDate.day}';
-        queryParams['fecha'] = formattedDate;
-      }
+      String baseUrl = 'http://192.168.27.228:4000/api/obtenerAsistencias';
+      Map<String, String> queryParams = {
+        'clase': widget.clase, // Incluyendo la clase en la solicitud
+      };
 
       String queryString = Uri(queryParameters: queryParams).query;
       String url = '$baseUrl?$queryString';
 
-      print('URL: $url'); // Verifica la URL generada
+      print('URL: $url');
 
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonData = json.decode(response.body);
+        final List<dynamic> jsonData = json.decode(response.body);
 
-        if (jsonData.containsKey('asistencias') &&
-            jsonData['asistencias'] != null) {
-          final List<dynamic> data = jsonData['asistencias'];
+        // Filtrar las asistencias por clase
+        List<dynamic> asistenciaClase = jsonData
+            .where((element) => element['nombre_clase'] == widget.clase)
+            .toList();
 
-          setState(() {
-            asistencias =
-                data.map((json) => Asistencia.fromJson(json)).toList();
-            isLoading = false;
-          });
-        } else {
-          setState(() {
-            asistencias = [];
-            isLoading = false;
-          });
+        // Filtrar la asistencia de acuerdo con la fecha seleccionada
+        if (fecha != null && fecha.isNotEmpty) {
+          asistenciaClase = asistenciaClase.where((asistencia) {
+            DateTime parsedDate =
+                DateTime.parse(asistencia['fecha_asistencia']);
+            String formattedDate =
+                '${parsedDate.toIso8601String().split('T')[0]}'; // Solo fecha (YYYY-MM-DD)
+            return formattedDate == fecha; // Comparar solo la parte de la fecha
+          }).toList();
         }
+
+        List<Estudiante> allEstudiantes = [];
+
+        if (asistenciaClase.isNotEmpty) {
+          for (var asistencia in asistenciaClase) {
+            final List<dynamic> data = asistencia['estudiantes'];
+            allEstudiantes.addAll(data
+                .map(
+                    (json) => Estudiante.fromJson(json, asistencia['id_clase']))
+                .toList());
+            this.fecha = asistencia[
+                'fecha_asistencia']; // Extraer la fecha de asistencia
+            this.idClase = asistencia[
+                'id_clase']; // Almacena el id_clase desde el objeto de asistencia
+          }
+        }
+
+        setState(() {
+          estudiantes = allEstudiantes;
+          isLoading = false;
+        });
       } else {
         throw Exception('Failed to load asistencias: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching data: $e');
       setState(() {
-        asistencias = [];
+        estudiantes = [];
         isLoading = false;
       });
     }
   }
 
-  Future<void> updateAsistencia(List<Asistencia> asistencias) async {
-    try {
-      String baseUrl = 'https://fullrestapi.onrender.com/asistencia';
+  void handleCheckboxChange(int idUsuario, bool newValue) {
+    setState(() {
+      for (var estudiante in estudiantes) {
+        if (estudiante.idUsuario == idUsuario) {
+          estudiante.presente = newValue ? 'sí' : 'no';
+          break;
+        }
+      }
+    });
+  }
 
-      final List<Map<String, dynamic>> updates = asistencias.map((a) => {
-        'id_usuario': a.idUsuario,
-        'estado_asistencia': a.estadoAsistencia,
-      }).toList();
+  Future<void> updateAsistencia(List<Estudiante> estudiantes) async {
+    if (estudiantes.isEmpty)
+      return; // Asegúrate de que hay estudiantes antes de continuar
+
+    int idAsistencia = estudiantes[0]
+        .idAsistencia; // Usa el idAsistencia del primer estudiante
+
+    try {
+      String baseUrl =
+          'http://192.168.27.228:4000/api/actualizarasis/$idAsistencia';
+
+      // Verifica que la fecha no sea nula
+      if (fecha == null || fecha!.isEmpty) {
+        print('Error: fecha no está definida.');
+        return; // Salir si la fecha no está definida
+      }
+
+      // Usa el id_clase almacenado desde el objeto de asistencia
+      if (idClase == null) {
+        print('Error: id_clase no está definida.');
+        return; // Salir si el id_clase no está definido
+      }
+
+      // Convertir la fecha a DateTime y formatear
+      DateTime fechaDateTime = DateTime.parse(
+          fecha!); // Asumiendo que `fecha` está en formato 'YYYY-MM-DD'
+      String formattedFecha =
+          '${fechaDateTime.toIso8601String().split('.')[0]}:00'; // Convierte a ISO 8601 y agrega ':00'
+
+      // Mapeo de estudiantes: convertir presente a 1 (sí) o 0 (no)
+      final List<Map<String, dynamic>> updates = estudiantes
+          .map((e) => {
+                'id_usuario': e.idUsuario,
+                'presente': e.presente == 'sí'
+                    ? 1
+                    : 0, // Convertir 'sí' a 1 y cualquier otra cosa a 0
+              })
+          .toList();
+
+      // Debugging: imprimir los datos que se enviarán
+      print('Datos a enviar:');
+      print({
+        'estudiantes': updates,
+        'fecha_asistencia': formattedFecha, // Envía la fecha formateada
+        'id_clase': idClase, // Envía id_clase
+      });
 
       final response = await http.put(
         Uri.parse(baseUrl),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8',
         },
-        body: jsonEncode(updates),
+        body: jsonEncode({
+          'estudiantes': updates,
+          'fecha_asistencia': formattedFecha, // Envía la fecha formateada
+          'id_clase': idClase, // Envía id_clase
+        }),
       );
 
       if (response.statusCode == 200) {
-        print('Asistencias actualizadas correctamente');
-        // Actualizar estado local después de la respuesta exitosa
-        setState(() {
-          // No es necesario actualizar localmente porque ya se actualizó al cambiar los checkboxes
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Las asistencias se han actualizado correctamente.'),
+            duration: Duration(seconds: 2), // Duración de la SnackBar
+          ),
+        );
       } else {
         print('Failed to update asistencia: ${response.statusCode}');
         print('Response body: ${response.body}');
@@ -194,16 +258,6 @@ class _DetalleAsistenciaScreenState extends State<DetalleAsistenciaScreen> {
     } catch (e) {
       print('Error updating data: $e');
     }
-  }
-
-  void handleCheckboxChange(int idUsuario, bool newValue) {
-    setState(() {
-      final index = asistencias
-          .indexWhere((asistencia) => asistencia.idUsuario == idUsuario);
-      if (index != -1) {
-        asistencias[index].estadoAsistencia = newValue ? 'Presente' : 'Ausente';
-      }
-    });
   }
 
   @override
@@ -228,48 +282,41 @@ class _DetalleAsistenciaScreenState extends State<DetalleAsistenciaScreen> {
                           String? fecha = fechaController.text.isNotEmpty
                               ? fechaController.text
                               : null;
-                          fetchAsistencia(widget.clase, fecha: fecha);
+                          fetchAsistencia(fecha: fecha);
                         },
                       ),
                     ),
                   ),
                 ),
                 Expanded(
-                  child: asistencias.isEmpty
+                  child: estudiantes.isEmpty
                       ? const Center(
                           child: Text('Asistencia no encontrada'),
                         )
                       : ListView.builder(
-                          itemCount: asistencias.length,
+                          itemCount: estudiantes.length,
                           itemBuilder: (context, index) {
-                            final asistencia = asistencias[index];
-                            return CheckboxListTile(
-                              key: ValueKey<int>(asistencia.idUsuario),
-                              title: Text('${asistencia.nombreUsuario}'),
-                              subtitle: Text(
-                                  'Fecha: ${asistencia.fechaActual}, Estado: ${asistencia.estadoAsistencia}'),
-                              value: asistencia.estadoAsistencia == 'Presente',
-                              onChanged: (bool? newValue) {
-                                handleCheckboxChange(
-                                    asistencia.idUsuario, newValue!);
-                              },
+                            final estudiante = estudiantes[index];
+                            return Card(
+                              child: ListTile(
+                                title: Text(estudiante.nombreUsuario),
+                                trailing: Checkbox(
+                                  value: estudiante.presente == 'sí',
+                                  onChanged: (newValue) {
+                                    handleCheckboxChange(
+                                        estudiante.idUsuario, newValue!);
+                                  },
+                                ),
+                              ),
                             );
                           },
                         ),
                 ),
                 ElevatedButton(
-                  onPressed: () async {
-                    // Guardar cambios
-                    await updateAsistencia(asistencias);
-                    // Una vez completadas las actualizaciones, mostrar un mensaje
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Cambios guardados correctamente'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                  onPressed: () {
+                    updateAsistencia(estudiantes);
                   },
-                  child: Text('Guardar cambios'),
+                  child: const Text('Actualizar Asistencia'),
                 ),
               ],
             ),
@@ -277,28 +324,25 @@ class _DetalleAsistenciaScreenState extends State<DetalleAsistenciaScreen> {
   }
 }
 
-class Asistencia {
+class Estudiante {
   final int idUsuario;
   final String nombreUsuario;
-  final String clase;
-  final String fechaActual;
-  String estadoAsistencia;
+  String presente;
+  final int idAsistencia;
 
-  Asistencia({
+  Estudiante({
     required this.idUsuario,
     required this.nombreUsuario,
-    required this.clase,
-    required this.fechaActual,
-    required this.estadoAsistencia,
+    required this.presente,
+    required this.idAsistencia,
   });
 
-  factory Asistencia.fromJson(Map<String, dynamic> json) {
-    return Asistencia(
+  factory Estudiante.fromJson(Map<String, dynamic> json, int idClase) {
+    return Estudiante(
       idUsuario: json['id_usuario'],
       nombreUsuario: json['nombre_usuario'],
-      clase: json['clase'],
-      fechaActual: json['fecha_actual'],
-      estadoAsistencia: json['estado_asistencia'],
+      presente: json['presente'] ?? 'no', // Por defecto a 'no'
+      idAsistencia: json['id_asistencia'],
     );
   }
 }

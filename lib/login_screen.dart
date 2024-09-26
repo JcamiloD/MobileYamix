@@ -5,7 +5,7 @@ import 'forgot_password.dart';
 import './student/index.dart';
 import './teacher/index.dart';
 import 'welcome_screen.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 
 //definicon de la clase LoginScreen
 class LoginScreen extends StatefulWidget {
@@ -25,31 +25,39 @@ class _LoginScreenState extends State<LoginScreen> {
 
 
   
-  Future<void> _login() async {
-    String email = _emailController.text.trim();
-    String password = _passwordController.text.trim();
+Future<void> _login() async {
+  String email = _emailController.text.trim();
+  String password = _passwordController.text.trim();
 
-    String apiUrl = 'https://fullrestapi.onrender.com/user/login';
+  try {
+    var response = await http.post(
+      Uri.parse("http://192.168.27.228:4000/api/login"),
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: jsonEncode(<String, String>{
+        'gmail': email,
+        'pass': password,
+      }),
+    );
 
-    try {
-      var response = await http.post(
-        Uri.parse(apiUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(<String, String>{
-          'gmail': email,
-          'contraseña': password,
-        }),
-      );
+    if (response.statusCode == 200) {
+      var jsonResponse = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
-        var jsonResponse = jsonDecode(response.body);
+      if (jsonResponse['token'] != null) {
+        String token = jsonResponse['token'];
 
-        if (jsonResponse['success']) {
-          String role = jsonResponse['data']['roll'];
+        try {
+          // Almacenar el token en SharedPreferences
+          SharedPreferences prefs = await SharedPreferences.getInstance();
+          await prefs.setString('authToken', token);
 
-          if (role == 'profesor') {
+          // Decodificar el payload del JWT
+          String decodedPayload = utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1])));
+          var payload = jsonDecode(decodedPayload);
+          String role = payload['rol'];
+
+          if (role == 'profesor' || role == 'administrador') {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const AdminScreen()),
@@ -60,48 +68,42 @@ class _LoginScreenState extends State<LoginScreen> {
               MaterialPageRoute(builder: (context) => const UserScreen()),
             );
           }
-        } 
+        } catch (e) {
+          print('Error al decodificar el JWT: $e');
+          _showErrorDialog('Error de decodificación', 'No se pudo decodificar el token de autenticación.');
+        }
       } else {
-        print('Error de inicio de sesión: ${response.statusCode}');
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Error de inicio de sesión'),
-              content: const Text('Correo o contraseña incorrecta.'),
-              actions: <Widget>[
-                TextButton(
-                  child: const Text('OK'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            );
-          },
-        );
+        _showErrorDialog('Error de inicio de sesión', jsonResponse['message'] ?? 'Error desconocido.');
       }
-    } catch (e) {
-      print('Error al conectarse al servidor: $e');
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Error de conexión'),
-            content: const Text('No se pudo conectar al servidor.'),
-            actions: <Widget>[
-              TextButton(
-                child: const Text('OK'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        },
-      );
+    } else {
+      _showErrorDialog('Error de inicio de sesión', jsonDecode(response.body)['message'] ?? 'Correo o contraseña incorrecta.');
     }
+  } catch (e) {
+    print('Error al conectarse al servidor: $e');
+    _showErrorDialog('Error de conexión', 'No se pudo conectar al servidor.');
   }
+}
+
+// Función para mostrar un diálogo de error
+void _showErrorDialog(String title, String content) {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: <Widget>[
+          TextButton(
+            child: const Text('OK'),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {

@@ -3,7 +3,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../static/mydrawe.dart';
-
 import 'edit_news.dart'; // Importa tu pantalla de edición
 
 class NewsScreen extends StatefulWidget {
@@ -14,40 +13,45 @@ class NewsScreen extends StatefulWidget {
 }
 
 class _NewsScreenState extends State<NewsScreen> {
-  List<dynamic> _eventos = [];
-  bool _isLoading = true;
+  List<Map<String, dynamic>> _eventos = [];
+  bool _isLoading = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    fetchEventos();
+    _fetchEventos();
   }
 
-  Future<void> fetchEventos() async {
-    final response = await http
-        .get(Uri.parse('https://fullrestapi.onrender.com/eventos'));
+  Future<void> _fetchEventos() async {
+    final url = Uri.parse('http://192.168.27.228:4000/api/traer_eventos'); // Cambia esto por la URL correcta
 
-    if (response.statusCode == 200) {
-      try {
-        final responseBody = response.body; // Print the response for debugging
-        final Map<String, dynamic> jsonResponse = json.decode(responseBody);
-        final List<dynamic> data =
-            jsonResponse['eventos']; // Adjust to the correct structure
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await http.get(url);
+
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List;
         setState(() {
-          _eventos = data;
+          _eventos = data.map((item) => item as Map<String, dynamic>).toList();
           _isLoading = false;
         });
-      } catch (e) {
-        print("Error al convertir data: $e"); // Print the error for debugging
+      } else {
         setState(() {
-          _errorMessage = 'Error al convertir  data';
+          _errorMessage = 'No se pudo cargar los eventos: ${response.statusCode}';
           _isLoading = false;
         });
       }
-    } else {
+    } catch (e) {
       setState(() {
-        _errorMessage = 'Error al cargar eventos';
+        _errorMessage = 'Error al intentar cargar los eventos: $e';
         _isLoading = false;
       });
     }
@@ -74,8 +78,7 @@ class _NewsScreenState extends State<NewsScreen> {
   }
 
   Future<void> deleteEvento(String id) async {
-    final url = Uri.parse('https://fullrestapi.onrender.com/eventos/$id');
-
+    final url = Uri.parse('http://192.168.27.228:4000/api/eliminar_evento/$id');
     try {
       final response = await http.delete(url);
       print('Response status code: ${response.statusCode}');
@@ -85,24 +88,14 @@ class _NewsScreenState extends State<NewsScreen> {
         setState(() {
           _eventos.removeWhere((evento) => evento['id_evento'] == id);
         });
-        _refreshScreen(); // Llamamos al método para refrescar la pantalla
+        _fetchEventos();
       } else {
-        _showErrorDialog(
-            'No se pudo eliminar el evento: ${response.statusCode}');
+        _showErrorDialog('No se pudo eliminar el evento: ${response.statusCode}');
       }
     } catch (e) {
       _showErrorDialog('Error al intentar eliminar el evento: $e');
     }
   }
-
-void _refreshScreen() {
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-  });
-  fetchEventos(); 
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -138,9 +131,9 @@ void _refreshScreen() {
                     itemCount: _eventos.length,
                     itemBuilder: (context, index) {
                       final evento = _eventos[index];
+                      print('Evento en ListView: $evento'); // Mensaje para depurar cada evento
                       return EventoCard(
-                        key: Key(evento['id_evento']
-                            .toString()), // Usar una clave única
+                        key: Key(evento['id_evento'].toString()),
                         evento: evento,
                         onDelete: () {
                           showDialog(
@@ -148,8 +141,7 @@ void _refreshScreen() {
                             builder: (BuildContext context) {
                               return AlertDialog(
                                 title: const Text('Confirmar eliminación'),
-                                content: const Text(
-                                    '¿Estás seguro de que quieres eliminar este evento?'),
+                                content: const Text('¿Estás seguro de que quieres eliminar este evento?'),
                                 actions: <Widget>[
                                   TextButton(
                                     child: const Text('Cancelar'),
@@ -161,8 +153,7 @@ void _refreshScreen() {
                                     child: const Text('Eliminar'),
                                     onPressed: () {
                                       Navigator.of(context).pop();
-                                      deleteEvento(
-                                          evento['id_evento'].toString());
+                                      deleteEvento(evento['id_evento'].toString());
                                     },
                                   ),
                                 ],
@@ -176,8 +167,7 @@ void _refreshScreen() {
       ),
     );
   }
-}
-
+  }
 class EventoCard extends StatelessWidget {
   final Map<String, dynamic> evento;
   final VoidCallback onDelete;
@@ -190,12 +180,25 @@ class EventoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String nombreEvento = evento['nombre_evento'];
-    final String descripcion = evento['descripcion'];
-    final String tipoEvento = evento['tipo_evento'];
-    final String ubicacion = evento['ubicacion'];
-    final String fechaHoraInicio = evento['fecha_hora_inicio'].toString();
-    final String fechaHoraFinal = evento['fecha_hora_final'].toString();
+    final String nombreEvento = evento['nombre_evento'] ?? 'Desconocido';
+    final String descripcion = evento['descripcion'] ?? 'No disponible';
+    final String tipoEvento = evento['tipo_evento'] ?? 'No disponible';
+    final String ubicacion = evento['ubicacion'] ?? 'No disponible';
+    final String notificar = evento['notificar'] ?? 'No disponible';
+    final String descripcionNotificacion = evento['descripcion_notificacion'] ?? 'No disponible';
+    final String fechaHoraInicio = evento['fecha_hora_inicio']?.toString() ?? 'No disponible';
+    final String fechaHoraFinal = evento['fecha_hora_final']?.toString() ?? 'No disponible';
+    final String duracion = evento['duracion']?.toString() ?? 'No disponible'; // Agregar duración
+    final String idClase = evento['id_clase']?.toString() ?? '0'; // Obtener el ID de clase
+
+    // Mapa para convertir el id_clase a su nombre correspondiente
+    final Map<String, String> claseMap = {
+      '3': 'Boxeo',
+      '2': 'Mixtas',
+      '1': 'Parkour',
+    };
+
+    final String clase = claseMap[idClase] ?? 'No disponible'; // Obtener el nombre de la clase
 
     return Card(
       child: Column(
@@ -204,7 +207,7 @@ class EventoCard extends StatelessWidget {
             leading: const FaIcon(FontAwesomeIcons.calendar),
             title: Text(nombreEvento),
             subtitle: Text(
-                'Descripción: $descripcion\nTipo: $tipoEvento\nUbicación: $ubicacion\nInicio: $fechaHoraInicio\nFinal: $fechaHoraFinal'),
+                'Descripción: $descripcion\nTipo: $tipoEvento\nUbicación: $ubicacion\nInicio: $fechaHoraInicio\nFinal: $fechaHoraFinal\nDuración: $duracion\nClase: $clase\nNotificar: $notificar\nDescripción Notificación: $descripcionNotificacion'),
           ),
           ButtonBar(
             alignment: MainAxisAlignment.end,

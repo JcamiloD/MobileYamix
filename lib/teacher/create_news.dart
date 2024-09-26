@@ -60,10 +60,22 @@ class _AddEventFormState extends State<AddEventForm> {
   final TextEditingController _descripcionController = TextEditingController();
   final TextEditingController _tipoEventoController = TextEditingController();
   final TextEditingController _ubicacionController = TextEditingController();
-  final TextEditingController _fechaHoraInicioController = TextEditingController();
-  final TextEditingController _fechaHoraFinalController = TextEditingController();
+  final TextEditingController _fechaHoraInicioController =
+      TextEditingController();
+  final TextEditingController _fechaHoraFinalController =
+      TextEditingController();
 
-  final String apiUrl = 'https://fullrestapi.onrender.com/evento';
+  // Nuevos controladores
+  final TextEditingController _notificarController = TextEditingController();
+  final TextEditingController _descripcionNotificacionController =
+      TextEditingController();
+  final TextEditingController _duracionController = TextEditingController();
+
+  String? _claseSeleccionada; // Variable para la clase seleccionada
+  final List<String> _clases = ['Mixtas', 'Parkour', 'Boxeo'];
+
+  final String apiUrl =
+      'http://192.168.27.228:4000/api/agregar_evento'; // Cambiado el endpoint
 
   final TextStyle _labelStyle = const TextStyle(
     color: Color(0xffB81736),
@@ -73,186 +85,265 @@ class _AddEventFormState extends State<AddEventForm> {
   String formatTimeOfDay(TimeOfDay time) {
     final now = DateTime.now();
     final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    final format = DateFormat.jm(); // Formato de 12 horas con AM/PM
+    final format = DateFormat('HH:mm:ss'); // Formato de 24 horas
     return format.format(dt);
+  }
+
+  String formatDateTime(DateTime dateTime) {
+    return DateFormat('yyyy-MM-dd HH:mm:ss')
+        .format(dateTime); // Formato de fecha y hora
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: EdgeInsets.all(16.0),
-          children: [
-            TextFormField(
-              controller: _nombreEventoController,
-              decoration: InputDecoration(
-                labelText: 'Nombre del Evento',
-                labelStyle: _labelStyle,
-              ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Por favor, ingrese el nombre del evento';
-                }
-                return null;
-              },
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: EdgeInsets.all(16.0),
+        children: [
+          TextFormField(
+            controller: _nombreEventoController,
+            decoration: InputDecoration(
+              labelText: 'Nombre del Evento',
+              labelStyle: _labelStyle,
             ),
-            TextFormField(
-              controller: _descripcionController,
-              decoration: InputDecoration(
-                labelText: 'Descripción',
-                labelStyle: _labelStyle,
-              ),
-              maxLines: 3,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Por favor, ingrese el nombre del evento';
+              }
+              return null;
+            },
+          ),
+          TextFormField(
+            controller: _descripcionController,
+            decoration: InputDecoration(
+              labelText: 'Descripción',
+              labelStyle: _labelStyle,
             ),
-            TextFormField(
-              controller: _tipoEventoController,
-              decoration: InputDecoration(
-                labelText: 'Tipo de Evento',
-                labelStyle: _labelStyle,
-              ),
+            maxLines: 3,
+          ),
+          TextFormField(
+            controller: _tipoEventoController,
+            decoration: InputDecoration(
+              labelText: 'Tipo de Evento',
+              labelStyle: _labelStyle,
             ),
-            TextFormField(
-              controller: _ubicacionController,
-              decoration: InputDecoration(
-                labelText: 'Ubicación',
-                labelStyle: _labelStyle,
-              ),
-              maxLines: 1,
+          ),
+          TextFormField(
+            controller: _ubicacionController,
+            decoration: InputDecoration(
+              labelText: 'Ubicación',
+              labelStyle: _labelStyle,
             ),
-            TextFormField(
-              controller: _fechaHoraInicioController,
-              decoration: InputDecoration(
-                labelText: 'Fecha y Hora de Inicio',
-                labelStyle: _labelStyle,
-              ),
-              readOnly: true, // Para evitar que el usuario escriba directamente en el campo
-              onTap: () async {
-                DateTime? picked = await showDatePicker(
+            maxLines: 1,
+          ),
+          TextFormField(
+            controller: _fechaHoraInicioController,
+            decoration: InputDecoration(
+              labelText: 'Fecha y Hora de Inicio',
+              labelStyle: _labelStyle,
+            ),
+            readOnly: true,
+            onTap: () async {
+              DateTime? picked = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) {
+                TimeOfDay? timePicked = await showTimePicker(
                   context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
+                  initialTime: TimeOfDay.now(),
                 );
-                if (picked != null) {
-                  TimeOfDay? timePicked = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay.now(),
-                  );
-                  if (timePicked != null) {
-                    setState(() {
-                      // Construir la cadena en el formato deseado (ejemplo: YYYY-MM-DD HH:mm AM/PM)
-                      String formattedDate = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')} '
-                          '${formatTimeOfDay(timePicked)}';
-                      _fechaHoraInicioController.text = formattedDate;
-                    });
-                  }
+                if (timePicked != null) {
+                  setState(() {
+                    DateTime selectedDateTime = DateTime(
+                      picked.year,
+                      picked.month,
+                      picked.day,
+                      timePicked.hour,
+                      timePicked.minute,
+                    );
+                    _fechaHoraInicioController.text =
+                        formatDateTime(selectedDateTime);
+                  });
                 }
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Por favor, ingrese la fecha y hora de inicio';
-                }
-                return null;
-              },
-              maxLines: 2,
+              }
+            },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Por favor, ingrese la fecha y hora de inicio';
+              }
+              return null;
+            },
+          ),
+          TextFormField(
+            controller: _fechaHoraFinalController,
+            decoration: InputDecoration(
+              labelText: 'Fecha y Hora Final',
+              labelStyle: _labelStyle,
             ),
-            TextFormField(
-              controller: _fechaHoraFinalController,
-              decoration: InputDecoration(
-                labelText: 'Fecha y Hora Final',
-                labelStyle: _labelStyle,
-              ),
-              readOnly: true, // Para evitar que el usuario escriba directamente en el campo
-              onTap: () async {
-                DateTime? picked = await showDatePicker(
+            readOnly: true,
+            onTap: () async {
+              DateTime? picked = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) {
+                TimeOfDay? timePicked = await showTimePicker(
                   context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
+                  initialTime: TimeOfDay.now(),
                 );
-                if (picked != null) {
-                  TimeOfDay? timePicked = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay.now(),
-                  );
-                  if (timePicked != null) {
-                    setState(() {
-                      // Construir la cadena en el formato deseado (ejemplo: YYYY-MM-DD HH:mm AM/PM)
-                      String formattedDate = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')} '
-                          '${formatTimeOfDay(timePicked)}';
-                      _fechaHoraFinalController.text = formattedDate;
-                    });
-                  }
+                if (timePicked != null) {
+                  setState(() {
+                    DateTime selectedDateTime = DateTime(
+                      picked.year,
+                      picked.month,
+                      picked.day,
+                      timePicked.hour,
+                      timePicked.minute,
+                    );
+                    _fechaHoraFinalController.text =
+                        formatDateTime(selectedDateTime);
+                  });
                 }
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Por favor, ingrese la fecha y hora final';
-                }
-                return null;
-              },
-              maxLines: 2,
+              }
+            },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Por favor, ingrese la fecha y hora final';
+              }
+              return null;
+            },
+          ),
+          // Nuevos campos para notificar y descripción de la notificación
+          TextFormField(
+            controller: _notificarController,
+            decoration: InputDecoration(
+              labelText: 'Notificar',
+              labelStyle: _labelStyle,
             ),
-            
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: ElevatedButton(
-                onPressed: () async {
-                  if (_formKey.currentState!.validate()) {
-                    var data = {
-                      'nombre_evento': _nombreEventoController.text,
-                      'descripcion': _descripcionController.text,
-                      'tipo_evento': _tipoEventoController.text,
-                      'ubicacion': _ubicacionController.text,
-                      'fecha_hora_inicio': _fechaHoraInicioController.text,
-                      'fecha_hora_final': _fechaHoraFinalController.text,
-                    };
+          ),
+          TextFormField(
+            controller: _descripcionNotificacionController,
+            decoration: InputDecoration(
+              labelText: 'Descripción de la Notificación',
+              labelStyle: _labelStyle,
+            ),
+            maxLines: 3,
+          ),
+          // Campo para Duración
+          TextFormField(
+            controller: _duracionController,
+            decoration: InputDecoration(
+              labelText: 'Duración (minutos)',
+              labelStyle: _labelStyle,
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Por favor, ingrese la duración';
+              }
+              return null;
+            },
+          ),
+          // Selector para Clase
+          DropdownButtonFormField<String>(
+            decoration: InputDecoration(
+              labelText: 'Clase',
+              labelStyle: _labelStyle,
+            ),
+            value: _claseSeleccionada,
+            items: _clases.map((String clase) {
+              return DropdownMenuItem<String>(
+                value: clase,
+                child: Text(clase),
+              );
+            }).toList(),
+            onChanged: (newValue) {
+              setState(() {
+                _claseSeleccionada = newValue;
+              });
+            },
+            validator: (value) {
+              if (value == null) {
+                return 'Por favor, seleccione una clase';
+              }
+              return null;
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: ElevatedButton(
+              onPressed: () async {
+                if (_formKey.currentState!.validate()) {
+                  // Mapeo de clase a número
+                  String claseMapeada = '';
+                  switch (_claseSeleccionada) {
+                    case 'Parkour':
+                      claseMapeada = '1';
+                      break;
+                    case 'Mixtas':
+                      claseMapeada = '2';
+                      break;
+                    case 'Boxeo':
+                      claseMapeada = '3';
+                      break;
+                  }
 
-                    try {
-                      var response = await http.post(
-                        Uri.parse(apiUrl),
-                        body: json.encode(data),
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
+                  var data = {
+                    'nombre_evento': _nombreEventoController.text,
+                    'descripcion': _descripcionController.text,
+                    'tipo_evento': _tipoEventoController.text,
+                    'ubicacion': _ubicacionController.text,
+                    'fecha_inicio': _fechaHoraInicioController.text,
+                    'fecha_fin': _fechaHoraFinalController.text,
+                    'id_clase': claseMapeada,
+                    'duracion': _duracionController.text,
+                    'notificar': _notificarController.text,
+                    'descripcion_notificacion':
+                        _descripcionNotificacionController.text,
+                  };
+
+                  try {
+                    final response = await http.post(
+                      Uri.parse(apiUrl),
+                      headers: {'Content-Type': 'application/json'},
+                      body: jsonEncode(data),
+                    );
+
+                    if (response.statusCode == 200) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Evento agregado exitosamente')),
                       );
 
-                      if (response.statusCode == 200 || response.statusCode == 201) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Evento agregado correctamente')),
-                        );
-                        _nombreEventoController.clear();
-                        _descripcionController.clear();
-                        _tipoEventoController.clear();
-                        _ubicacionController.clear();
-                        _fechaHoraInicioController.clear();
-                        _fechaHoraFinalController.clear();
-                      } else {
-                        print('Error al agregar el evento: ${response.statusCode}');
-                      }
-                    } catch (e) {
-                      print('Error de red: $e');
+                      // Refrescar la página
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const AddEventScreen()),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Error al agregar el evento')),
+                      );
                     }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Error de conexión')),
+                    );
                   }
-                },
-                
-                child: const Text(
-                  
-                  'Agregar Evento',
-                  style: TextStyle(
-                    color: Color.fromRGBO(184, 23, 54, 1),
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    
-                  ),
-                  
-                ),
-              ),
+                }
+              },
+              child: const Text('Agregar Evento'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

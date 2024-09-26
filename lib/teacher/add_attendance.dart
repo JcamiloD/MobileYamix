@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart'; // Importar la biblioteca intl
 
 import '../static/mydrawe.dart';
-
 
 class MyApp extends StatelessWidget {
   @override
@@ -24,73 +24,99 @@ class AttendancePage extends StatefulWidget {
 }
 
 class _AttendancePageState extends State<AttendancePage> {
-  List<User> parkourStudents = [];
-  List<User> boxingStudents = [];
-  List<User> mixedStudents = [];
+  List<User> students = [];
   bool isLoading = true;
-  String? selectedClass;
+  String? selectedClassId;
+  DateTime selectedDate = DateTime.now(); // Fecha seleccionada
+
+  // Mapa de clases a sus IDs
+  final Map<String, String> classIds = {
+    'Parkour': '1', // Cambia por los IDs correctos
+    'Mixtas': '2',
+    'Boxeo': '3',
+  };
 
   @override
   void initState() {
     super.initState();
-    fetchData();
+    fetchClasses();
   }
 
-  Future<void> fetchData() async {
-    final response = await http.get(Uri.parse('https://fullrestapi.onrender.com/users')); // Reemplaza con la IP de tu computadora
+  Future<void> fetchClasses() async {
+    setState(() {
+      selectedClassId = classIds['Parkour']; // Seleccionamos por defecto una clase
+    });
+    await fetchStudents(selectedClassId!);
+  }
+
+  Future<void> fetchStudents(String classId) async {
+    final response = await http.get(Uri.parse('http://192.168.27.228:4000/api/claseEstudiante/$classId'));
 
     if (response.statusCode == 200) {
-      final Map<String, dynamic> data = json.decode(response.body);
-      final List<dynamic> users = data['data'];
+      final List<dynamic> userData = json.decode(response.body);
       setState(() {
-        parkourStudents = users
-            .where((user) => user['roll'] == 'estudiante' && user['clase'] == 'Parkour')
-            .map((json) => User.fromJson(json))
-            .toList();
-        boxingStudents = users
-            .where((user) => user['roll'] == 'estudiante' && user['clase'] == 'Boxeo')
-            .map((json) => User.fromJson(json))
-            .toList();
-        mixedStudents = users
-            .where((user) => user['roll'] == 'estudiante' && user['clase'] == 'Mixtas')
-            .map((json) => User.fromJson(json))
-            .toList();
+        students = userData.map((json) => User.fromJson(json)).toList();
         isLoading = false;
       });
     } else {
       setState(() {
         isLoading = false;
       });
-      throw Exception('Failed to load attendees');
+      throw Exception('Failed to load students');
     }
   }
 
-  Future<void> saveAttendance(String className, List<User> students) async {
-    final DateTime now = DateTime.now();
-    final String formattedDate = "${now.year}-${now.month}-${now.day}";
+  Future<void> saveAttendance() async {
+  final String formattedDate = "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
 
-    for (var student in students) {
-      final response = await http.post(
-        Uri.parse('https://fullrestapi.onrender.com/asistencia'), // Reemplaza con la IP de tu computadora
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'id_usuario': student.id,
-          'nombre_usuario': student.nombre,
-          'apellido': student.apellido,
-          'clase': student.clase,
-          'fecha_actual': formattedDate,
-          'estado_asistencia': student.present ? 'Presente' : 'Ausente',
-        }),
-      );
-
-      if (response.statusCode != 201) {
-        throw Exception('Failed to save attendance');
-      }
-    }
-
+  // Verificar que hay estudiantes
+  if (students.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Asistencia guardada correctamente para $className')),
+      SnackBar(content: Text('No hay estudiantes para guardar la asistencia.')),
     );
+    return; // Salir si no hay datos
+  }
+
+  // Estructurar los datos que se necesitan
+  final Map<String, dynamic> data = {
+    'id_clase': selectedClassId, // ID de la clase seleccionada
+    'fecha_asistencia': formattedDate, // Fecha seleccionada
+    'estudiantes': students.map((student) {
+      return {
+        'id_usuario': student.id,
+        'presente': student.present ? 1 : 0, // Solo envía id y estado de asistencia
+      };
+    }).toList(),
+  };
+
+  final response = await http.post(
+    Uri.parse('http://192.168.27.228:4000/api/createAsistencia'),
+    headers: {'Content-Type': 'application/json'},
+    body: json.encode(data), // Enviar solo los datos necesarios
+  );
+
+  if (response.statusCode == 201) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Asistencia guardada correctamente')),
+    );
+  } else {
+    print('Response body: ${response.body}'); // Para depuración
+    throw Exception('Failed to save attendance');
+  }
+}
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked; // Actualizar la fecha seleccionada
+      });
+    }
   }
 
   @override
@@ -100,23 +126,13 @@ class _AttendancePageState extends State<AttendancePage> {
         title: Text('Asistencia'),
         actions: [
           TextButton(
-            onPressed: selectedClass != null
-                ? () {
-                    switch (selectedClass) {
-                      case 'Parkour':
-                        saveAttendance(selectedClass!, parkourStudents);
-                        break;
-                      case 'Boxeo':
-                        saveAttendance(selectedClass!, boxingStudents);
-                        break;
-                      case 'Mixtas':
-                        saveAttendance(selectedClass!, mixedStudents);
-                        break;
-                    }
-                  }
-                : null,
+            onPressed: () {
+              if (students.isNotEmpty) {
+                saveAttendance();
+              }
+            },
             child: Text(
-              'Guardar Cambios',
+              'Agregar Asistencia',
               style: TextStyle(color: Colors.black),
             ),
           ),
@@ -127,45 +143,51 @@ class _AttendancePageState extends State<AttendancePage> {
       drawer: MyDrawer(), // Suponiendo que MyDrawer es un widget personalizado de cajón
       body: isLoading
           ? Center(child: CircularProgressIndicator())
-          : ListView(
+          : Column(
               children: [
-                _buildClassSection('Parkour', parkourStudents, selectedClass == 'Parkour'),
-                _buildClassSection('Boxeo', boxingStudents, selectedClass == 'Boxeo'),
-                _buildClassSection('Mixtas', mixedStudents, selectedClass == 'Mixtas'),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildClassSection(String className, List<User> students, bool isSelected) {
-    return ExpansionTile(
-      title: Text(className),
-      onExpansionChanged: (expanded) {
-        setState(() {
-          if (expanded) {
-            selectedClass = className;
-          } else {
-            selectedClass = null;
-          }
-        });
-      },
-      initiallyExpanded: isSelected,
-      children: isSelected
-          ? students.map((student) {
-              return ListTile(
-                leading: Icon(Icons.person),
-                title: Text('${student.nombre} ${student.apellido}'),
-                trailing: Checkbox(
-                  value: student.present,
-                  onChanged: (bool? value) {
+                DropdownButton<String>(
+                  value: classIds.keys.firstWhere((k) => classIds[k] == selectedClassId),
+                  onChanged: (String? newValue) {
                     setState(() {
-                      student.present = value!;
+                      selectedClassId = classIds[newValue!]; // Actualiza el ID seleccionado
+                      fetchStudents(selectedClassId!);
                     });
                   },
+                  items: classIds.keys.map<DropdownMenuItem<String>>((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
                 ),
-              );
-            }).toList()
-          : [],
+                ListTile(
+                  title: Text("Fecha de Asistencia: ${DateFormat('yyyy-MM-dd').format(selectedDate)}"), // Formato de fecha
+                  trailing: Icon(Icons.calendar_today),
+                  onTap: () => _selectDate(context), // Muestra el selector de fecha
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: students.length,
+                    itemBuilder: (context, index) {
+                      final student = students[index];
+                      return ListTile(
+                        leading: Icon(Icons.person),
+                        title: Text('${student.nombre} ${student.apellido}'),
+                        subtitle: Text('Clase: ${student.clase.isNotEmpty ? student.clase : "Clase no asignada"}'),
+                        trailing: Checkbox(
+                          value: student.present,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              student.present = value!; // Actualiza el estado de presencia
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -192,15 +214,14 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
-  return User(
-    id: json['id_usuario'] ?? 0,  // Ejemplo: proporciona 0 si 'id_usuario' es nulo
-    nombre: json['nombre'] ?? '',
-    apellido: json['apellido'] ?? '',
-    gmail: json['gmail'] ?? '',
-    contrasena: json['contrasena'] ?? '',
-    roll: json['roll'] ?? '',
-    clase: json['clase'] ?? '',
-  );
-}
-
+    return User(
+      id: json['id_usuario'] ?? 0,
+      nombre: json['nombre'] ?? '',
+      apellido: json['apellido'] ?? '',
+      gmail: json['gmail'] ?? '',
+      contrasena: json['contrasena'] ?? '',
+      roll: json['roll'] ?? '',
+      clase: json['nombre_clase'] ?? '',
+    );
+  }
 }

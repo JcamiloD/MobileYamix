@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';  // Asegúrate de agregar esta línea para decodificar el JWT.
 import '../login_screen.dart' as login_screen;
 
 import 'index.dart';
@@ -17,39 +20,79 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
   List<dynamic> _eventos = [];
   bool _isLoading = true;
   String? _errorMessage;
+  String? _token; // Variable para almacenar el token
+  String? _clase; // Variable para almacenar la clase del usuario
 
   @override
   void initState() {
     super.initState();
-    fetchEventos();
+    _loadTokenAndClass(); // Cargar token y clase al iniciar
   }
 
-  Future<void> fetchEventos() async {
-    final response = await http
-        .get(Uri.parse('https://fullrestapi.onrender.com/eventos'));
+  Future<void> _loadTokenAndClass() async {
+    // Obtener el token almacenado en SharedPreferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('authToken');
+    
+    if (token != null) {
+      // Decodificar el JWT para obtener la clase del usuario
+      Map<String, dynamic> decodedToken = JwtDecoder.decode(token);
+      String? clase = decodedToken['clase'];  // Extraer el campo 'clase' del token
 
-    if (response.statusCode == 200) {
-      try {
-        final responseBody = response.body;
-        final Map<String, dynamic> jsonResponse = json.decode(responseBody);
-        final List<dynamic> data = jsonResponse['eventos'];
-        setState(() {
-          _eventos = data;
-          _isLoading = false;
-        });
-      } catch (e) {
-        setState(() {
-          _errorMessage = 'Error parsing data';
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _token = token;  // Guardar el token
+        _clase = clase;  // Guardar la clase
+      });
+
+      fetchEventos();  // Llamar a la función para obtener los eventos
     } else {
       setState(() {
-        _errorMessage = 'Failed to load eventos';
+        _errorMessage = 'Token not found';
         _isLoading = false;
       });
     }
   }
+
+Future<void> fetchEventos() async {
+  if (_token == null || _clase == null) {
+    setState(() {
+      _errorMessage = 'Error: Token or class is missing';
+      _isLoading = false;
+    });
+    return;
+  }
+
+  final response = await http.get(
+    Uri.parse('http://192.168.27.228:4000/api/traerEventosPorNombreClase/$_clase'),
+    headers: {
+      'Authorization': 'Bearer $_token',
+    },
+  );
+
+  print('Response body: ${response.body}');  // Imprimir el cuerpo de la respuesta
+
+  if (response.statusCode == 200) {
+    try {
+      final responseBody = response.body;
+      final List<dynamic> data = json.decode(responseBody);  // Decodificar como una lista, no como un mapa
+      setState(() {
+        _eventos = data;  // Guardar la lista directamente
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error parsing data: $e';
+        _isLoading = false;
+      });
+    }
+  } else {
+    setState(() {
+      _errorMessage = 'Failed to load eventos';
+      _isLoading = false;
+    });
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +149,6 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
                     builder: (context) => const UserScreen(),
                   ),
                 );
-                // Implementar navegación al inicio de la aplicación
               },
             ),
             const Divider(),
@@ -125,7 +167,6 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
               title: const Text('Ver Clases'),
               onTap: () {
                 Navigator.pop(context);
-                // Implementar navegación al panel de eventos del administrador
               },
             ),
             const Divider(),
@@ -150,7 +191,6 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
                     builder: (context) => const UserNewsScreen(),
                   ),
                 );
-                // Implementar navegación al panel de novedades del administrador
               },
             ),
             const Divider(),
@@ -164,7 +204,6 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
                     builder: (context) => const login_screen.LoginScreen(),
                   ),
                 );
-                // Implementar lógica para cerrar sesión
               },
             ),
           ],
@@ -187,7 +226,6 @@ class _UserNewsScreenState extends State<UserNewsScreen> {
     );
   }
 }
-
 class EventoCard extends StatelessWidget {
   final Map<String, dynamic> evento;
 
@@ -205,6 +243,15 @@ class EventoCard extends StatelessWidget {
     final String fechaHoraInicio = evento['fecha_hora_inicio'].toString();
     final String fechaHoraFinal = evento['fecha_hora_final'].toString();
 
+    // Parsear las fechas desde las cadenas
+    DateTime inicio = DateTime.parse(fechaHoraInicio);
+    DateTime fin = DateTime.parse(fechaHoraFinal);
+
+    // Definir el formato deseado
+    String formato = 'dd/MM/yyyy HH:mm'; // Formato deseado
+    String fechaInicioFormateada = DateFormat(formato).format(inicio);
+    String fechaFinalFormateada = DateFormat(formato).format(fin);
+
     return Card(
       child: Column(
         children: [
@@ -212,7 +259,7 @@ class EventoCard extends StatelessWidget {
             leading: FaIcon(FontAwesomeIcons.calendar),
             title: Text(nombreEvento),
             subtitle: Text(
-                'Descripción: $descripcion\nTipo: $tipoEvento\nUbicación: $ubicacion\nInicio: $fechaHoraInicio\nFinal: $fechaHoraFinal'),
+                'Descripción: $descripcion\nTipo: $tipoEvento\nUbicación: $ubicacion\nInicio: $fechaInicioFormateada\nFinal: $fechaFinalFormateada'),
           ),
         ],
       ),

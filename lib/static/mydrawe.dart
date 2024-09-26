@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Asegúrate de importar esta librería
 
 import '../teacher/add_attendance.dart';
 import '../teacher/attendance.dart';
-
-
 import '../teacher/create_news.dart';
 import '../teacher/index.dart';
 import '../teacher/news.dart';
 import '../login_screen.dart' as login_screen;
 
 class MyDrawer extends StatelessWidget {
+  // Función de logout
+  Future<void> logout(BuildContext context) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('authToken');
+    
+    // Redirigir a la pantalla de inicio de sesión después del logout
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const login_screen.LoginScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -79,7 +92,7 @@ class MyDrawer extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>  AttendancePage(),
+                  builder: (context) => AttendancePage(),
                 ),
               );
             },
@@ -88,7 +101,7 @@ class MyDrawer extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0),
             child: Text(
-              'Novedades',
+              'Eventos',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -97,7 +110,7 @@ class MyDrawer extends StatelessWidget {
           ),
           ListTile(
             leading: const FaIcon(FontAwesomeIcons.newspaper),
-            title: const Text('Panel de novedades'),
+            title: const Text('Eventos'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
@@ -106,7 +119,6 @@ class MyDrawer extends StatelessWidget {
                   builder: (context) => const NewsScreen(),
                 ),
               );
-              // Navegar a la pantalla de Panel de Novedades
             },
           ),
           ListTile(
@@ -127,12 +139,7 @@ class MyDrawer extends StatelessWidget {
             leading: const FaIcon(Icons.logout),
             title: const Text('Cerrar sesión'),
             onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const login_screen.LoginScreen(),
-                ),
-              );
+              logout(context); // Llama a la función de logout
             },
           ),
         ],

@@ -97,7 +97,7 @@ class UserScreen extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
-                'Novedades',
+                'Eventos',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -106,7 +106,7 @@ class UserScreen extends StatelessWidget {
             ),
             ListTile(
               leading: const FaIcon(FontAwesomeIcons.newspaper),
-              title: const Text('Ver novedades'),
+              title: const Text('Eventos'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
