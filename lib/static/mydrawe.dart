@@ -98,43 +98,6 @@ class MyDrawer extends StatelessWidget {
             },
           ),
           const Divider(),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text(
-              'Eventos',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const FaIcon(FontAwesomeIcons.newspaper),
-            title: const Text('Eventos'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NewsScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: const Text('Agregar'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AddEventScreen(),
-                ),
-              );
-            },
-          ),
-          const Divider(),
           ListTile(
             leading: const FaIcon(Icons.logout),
             title: const Text('Cerrar sesión'),
