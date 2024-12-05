@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:intl/intl.dart'; // Importar la biblioteca intl
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../static/mydrawe.dart';
 
@@ -25,16 +26,10 @@ class AttendancePage extends StatefulWidget {
 
 class _AttendancePageState extends State<AttendancePage> {
   List<User> students = [];
+  Map<String, String> classIds = {}; // Clases cargadas dinámicamente
   bool isLoading = true;
   String? selectedClassId;
   DateTime selectedDate = DateTime.now(); // Fecha seleccionada
-
-  // Mapa de clases a sus IDs
-  final Map<String, String> classIds = {
-    'Parkour': '1', // Cambia por los IDs correctos
-    'Mixtas': '2',
-    'Boxeo': '3',
-  };
 
   @override
   void initState() {
@@ -42,15 +37,59 @@ class _AttendancePageState extends State<AttendancePage> {
     fetchClasses();
   }
 
-  Future<void> fetchClasses() async {
+Future<void> fetchClasses() async {
+  try {
+    // Obtener el token de SharedPreferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('authToken');
+    if (token == null) {
+      throw Exception('Token no encontrado');
+    }
+
+    // Decodificar el token
+    String decodedPayload = utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1])));
+    Map<String, dynamic> payload = jsonDecode(decodedPayload);
+
+    if (!payload.containsKey('id')) {
+      throw Exception('id_usuario no encontrado en el token');
+    }
+
+    String userId = payload['id'].toString();  // Extraemos el id_usuario del token
+
+    // Realizar la petición HTTP solo si el token es válido
+    final response = await http.get(Uri.parse('http://192.168.1.9:4000/api/clasePorUsuario/$userId'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> classes = json.decode(response.body);
+      setState(() {
+        classIds = {
+          for (var cls in classes)
+            cls['nombre_curso']: cls['id_clase'].toString(),
+        };
+        selectedClassId = classIds.isNotEmpty ? classIds.values.first : null;
+      });
+
+      if (selectedClassId != null) {
+        fetchStudents(selectedClassId!); // Cargar estudiantes para la clase inicial
+      }
+    } else {
+      throw Exception('Error al cargar las clases');
+    }
+  } catch (e) {
     setState(() {
-      selectedClassId = classIds['Parkour']; // Seleccionamos por defecto una clase
+      isLoading = false;
     });
-    await fetchStudents(selectedClassId!);
+    print('Error al cargar las clases: $e');
   }
+}
+
 
   Future<void> fetchStudents(String classId) async {
-    final response = await http.get(Uri.parse('http://192.168.27.228:4000/api/claseEstudiante/$classId'));
+    setState(() {
+      isLoading = true;
+    });
+
+    final response = await http.get(Uri.parse('http://192.168.1.9:4000/api/claseEstudiante/$classId'));
 
     if (response.statusCode == 200) {
       final List<dynamic> userData = json.decode(response.body);
@@ -62,48 +101,57 @@ class _AttendancePageState extends State<AttendancePage> {
       setState(() {
         isLoading = false;
       });
-      throw Exception('Failed to load students');
+      throw Exception('Error al cargar los estudiantes');
     }
   }
 
   Future<void> saveAttendance() async {
   final String formattedDate = "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
 
-  // Verificar que hay estudiantes
   if (students.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('No hay estudiantes para guardar la asistencia.')),
     );
-    return; // Salir si no hay datos
+    return;
   }
 
-  // Estructurar los datos que se necesitan
   final Map<String, dynamic> data = {
-    'id_clase': selectedClassId, // ID de la clase seleccionada
-    'fecha_asistencia': formattedDate, // Fecha seleccionada
+    'id_clase': selectedClassId,
+    'fecha_asistencia': formattedDate,
     'estudiantes': students.map((student) {
       return {
         'id_usuario': student.id,
-        'presente': student.present ? 1 : 0, // Solo envía id y estado de asistencia
+        'presente': student.present ? 1 : 0,
       };
     }).toList(),
   };
 
-  final response = await http.post(
-    Uri.parse('http://192.168.27.228:4000/api/createAsistencia'),
-    headers: {'Content-Type': 'application/json'},
-    body: json.encode(data), // Enviar solo los datos necesarios
-  );
-
-  if (response.statusCode == 201) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Asistencia guardada correctamente')),
+  try {
+    final response = await http.post(
+      Uri.parse('http://192.168.1.9:4000/api/crear_asistencia'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(data),
     );
-  } else {
-    print('Response body: ${response.body}'); // Para depuración
-    throw Exception('Failed to save attendance');
+
+    if (response.statusCode == 201) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Asistencia guardada correctamente')),
+      );
+    } else {
+      // Extraer el mensaje de error de la respuesta y mostrarlo
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      final String errorMessage = responseData['message'] ?? 'Error desconocido';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al comunicarse con el servidor: $e')),
+    );
   }
 }
+
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -114,7 +162,7 @@ class _AttendancePageState extends State<AttendancePage> {
     );
     if (picked != null && picked != selectedDate) {
       setState(() {
-        selectedDate = picked; // Actualizar la fecha seleccionada
+        selectedDate = picked;
       });
     }
   }
@@ -137,33 +185,34 @@ class _AttendancePageState extends State<AttendancePage> {
             ),
           ),
         ],
-        backgroundColor: Color(0xffB81736), // Rojo oscuro personalizado
-        elevation: 0, // Sin sombra
+        backgroundColor: Color(0xffB81736),
+        elevation: 0,
       ),
-      drawer: MyDrawer(), // Suponiendo que MyDrawer es un widget personalizado de cajón
+      drawer: MyDrawer(),
       body: isLoading
           ? Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                DropdownButton<String>(
-                  value: classIds.keys.firstWhere((k) => classIds[k] == selectedClassId),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      selectedClassId = classIds[newValue!]; // Actualiza el ID seleccionado
-                      fetchStudents(selectedClassId!);
-                    });
-                  },
-                  items: classIds.keys.map<DropdownMenuItem<String>>((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                ),
+                if (classIds.isNotEmpty)
+                  DropdownButton<String>(
+                    value: classIds.keys.firstWhere((k) => classIds[k] == selectedClassId, orElse: () => ''),
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        selectedClassId = classIds[newValue!];
+                        fetchStudents(selectedClassId!);
+                      });
+                    },
+                    items: classIds.keys.map<DropdownMenuItem<String>>((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                  ),
                 ListTile(
-                  title: Text("Fecha de Asistencia: ${DateFormat('yyyy-MM-dd').format(selectedDate)}"), // Formato de fecha
+                  title: Text("Fecha de Asistencia: ${DateFormat('yyyy-MM-dd').format(selectedDate)}"),
                   trailing: Icon(Icons.calendar_today),
-                  onTap: () => _selectDate(context), // Muestra el selector de fecha
+                  onTap: () => _selectDate(context),
                 ),
                 Expanded(
                   child: ListView.builder(
@@ -178,7 +227,7 @@ class _AttendancePageState extends State<AttendancePage> {
                           value: student.present,
                           onChanged: (bool? value) {
                             setState(() {
-                              student.present = value!; // Actualiza el estado de presencia
+                              student.present = value!;
                             });
                           },
                         ),

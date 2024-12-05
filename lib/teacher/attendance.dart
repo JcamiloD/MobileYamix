@@ -1,14 +1,175 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../static/mydrawe.dart';
+import 'package:intl/intl.dart';
 
-class AsistenciaScreen extends StatelessWidget {
+class AsistenciaScreen extends StatefulWidget {
   const AsistenciaScreen({Key? key}) : super(key: key);
 
   @override
+  _AsistenciaScreenState createState() => _AsistenciaScreenState();
+}
+
+class _AsistenciaScreenState extends State<AsistenciaScreen> {
+  List<dynamic> asistencias = [];
+  String? selectedClase;
+  DateTime? selectedDate;
+  bool isLoading = true;
+  dynamic selectedAsistencia;
+  Map<int, bool> asistenciaEstudiantes =
+      {}; // Almacena la asistencia de cada estudiante
+  Map<int, bool> tempAsistenciaEstudiantes =
+      {}; // Almacena los valores originales antes de editar
+
+  @override
+  void initState() {
+    super.initState();
+    fetchAsistencias();
+  }
+
+  Future<void> fetchAsistencias() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    int? userId;
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('authToken');
+      if (token == null) {
+        throw Exception('Token no encontrado');
+      }
+
+      String decodedPayload = utf8
+          .decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))); 
+      Map<String, dynamic> payload = jsonDecode(decodedPayload);
+      if (!payload.containsKey('id')) {
+        throw Exception('id_usuario no encontrado en el token');
+      }
+      userId = payload['id'];
+
+      if (userId == null) {
+        throw Exception('User ID no disponible');
+      }
+
+      final response = await http.get(
+        Uri.parse('http://192.168.1.9:4000/api/traerAsistenciaProfe/$userId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          asistencias = data;
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Error al traer asistencias: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> actualizarAsistencia(int idEstudiante, int presente) async {
+    if (selectedAsistencia == null) {
+      print('selectedAsistencia es null');
+      return;
+    }
+
+    final response = await http.put(
+      Uri.parse(
+          'http://192.168.1.9:4000/api/actualizar_asistencia_estudiantes'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'id_asistencia': selectedAsistencia['id_asistencia'],
+        'id_estudiante': idEstudiante,
+        'presente': presente,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      fetchAsistencias(); 
+    } else {
+      print('Error al actualizar asistencia: ${response.statusCode}');
+    }
+  }
+
+  Future<void> guardarAsistencia() async {
+    if (selectedAsistencia == null) {
+      print('selectedAsistencia es null');
+      return;
+    }
+
+    List<Map<String, dynamic>> asistenciaUpdates = [];
+    for (var idEstudiante in asistenciaEstudiantes.keys) {
+      int presente = asistenciaEstudiantes[idEstudiante]!
+          ? 1
+          : 0; 
+      asistenciaUpdates.add({
+        'id_usuario': idEstudiante.toString(),
+        'presente': presente,
+      });
+    }
+
+    final response = await http.put(
+      Uri.parse(
+          'http://192.168.1.9:4000/api/actualizar_asistencia_estudiantes'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'id_asistencia': selectedAsistencia['id_asistencia'],
+        'cambios': asistenciaUpdates,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+       ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Asistencia guardada correctamente')),
+  );
+      fetchAsistencias();
+      
+    } else {
+      print('Error al guardar asistencia: ${response.statusCode}');
+    }
+  }
+
+  Future<void> seleccionarFecha(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked;
+      });
+    }
+  }
+
+  void limpiarFiltros() {
+    setState(() {
+      selectedClase = null;
+      selectedDate = null;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    List<dynamic> filteredAsistencias = asistencias.where((asistencia) {
+      if (selectedDate == null) return true;
+
+      DateTime asistenciaDate =
+          DateFormat('yyyy-MM-dd').parse(asistencia['fecha_asistencia']);
+      return selectedDate!.isAtSameMomentAs(asistenciaDate);
+    }).toList();
+
     return Scaffold(
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
@@ -35,314 +196,107 @@ class AsistenciaScreen extends StatelessWidget {
         padding: const EdgeInsets.all(8.0),
         child: Column(
           children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.calendar_today),
+                  onPressed: () => seleccionarFecha(context),
+                ),
+                IconButton(
+                  icon: Icon(Icons.clear),
+                  onPressed: limpiarFiltros,
+                ),
+              ],
+            ),
             Expanded(
-              child: ListView(
-                children: [
-                  AsistenciaCard(titulo: 'Mixtas', clase: 'Mixtas'),
-                  AsistenciaCard(titulo: 'Boxeo', clase: 'boxeo'),
-                  AsistenciaCard(titulo: 'Parkour', clase: 'parkour'),
-                ],
-              ),
+              child: isLoading
+                  ? Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      itemCount: filteredAsistencias.length,
+                      itemBuilder: (context, index) {
+                        var asistencia = filteredAsistencias[index];
+                        String formattedDate =
+                            DateFormat('dd/MM/yyyy').format(DateFormat('yyyy-MM-dd').parse(asistencia['fecha_asistencia']));
+
+                        return Card(
+                          margin: EdgeInsets.symmetric(vertical: 5),
+                          child: ListTile(
+                            title: Text(
+                                '${asistencia['nombre_curso']} - $formattedDate'),
+                            subtitle: Text(
+                                'Instructor: ${asistencia['nombre_instructor']}'),
+                            trailing: IconButton(
+                              icon: Icon(Icons.visibility),
+                              onPressed: () {
+                                setState(() {
+                                  selectedAsistencia =
+                                      asistencia; 
+                                  asistenciaEstudiantes.clear(); 
+                                  for (var estudiante
+                                      in asistencia['estudiantes']) {
+                                    asistenciaEstudiantes[estudiante['id_usuario']] =
+                                        estudiante['presente'] == 'sí';
+                                  }
+                                });
+
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text("Detalles de Asistencia"),
+                                    content: StatefulBuilder(
+                                      builder: (context, setState) {
+                                        return Column(
+                                          children: [
+                                            Text(
+                                                'Curso: ${asistencia['nombre_curso']}'),
+                                            Text(
+                                                'Instructor: ${asistencia['nombre_instructor']}'),
+                                            ...asistencia['estudiantes']
+                                                .map<Widget>((estudiante) {
+                                              return CheckboxListTile(
+                                                title: Text(estudiante[
+                                                    'nombre_usuario']),
+                                                value: asistenciaEstudiantes[estudiante['id_usuario']] ?? false,
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    asistenciaEstudiantes[
+                                                            estudiante['id_usuario']] =
+                                                        value ?? false;
+                                                  });
+                                                },
+                                              );
+                                            }).toList(),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.of(context).pop();
+                                        },
+                                        child: Text('Cancelar'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          guardarAsistencia();
+                                          Navigator.of(context).pop();
+                                        },
+                                        child: Text('Guardar'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class AsistenciaCard extends StatelessWidget {
-  final String titulo;
-  final String clase;
-
-  const AsistenciaCard({
-    Key? key,
-    required this.titulo,
-    required this.clase,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => DetalleAsistenciaScreen(clase: clase),
-            ),
-          );
-        },
-        leading: const FaIcon(FontAwesomeIcons.check),
-        title: Text(titulo),
-      ),
-    );
-  }
-}
-
-class DetalleAsistenciaScreen extends StatefulWidget {
-  final String clase;
-
-  const DetalleAsistenciaScreen({Key? key, required this.clase})
-      : super(key: key);
-
-  @override
-  _DetalleAsistenciaScreenState createState() =>
-      _DetalleAsistenciaScreenState();
-}
-
-class _DetalleAsistenciaScreenState extends State<DetalleAsistenciaScreen> {
-  List<Estudiante> estudiantes = [];
-  bool isLoading = true;
-  TextEditingController fechaController = TextEditingController();
-  String? fecha; // Almacena la fecha
-  int? idClase; // Almacena el id_clase
-
-  @override
-  void initState() {
-    super.initState();
-    fetchAsistencia(); // Llama al método sin pasar la clase
-  }
-
-  Future<void> fetchAsistencia({String? fecha}) async {
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      String baseUrl = 'http://192.168.27.228:4000/api/obtenerAsistencias';
-      Map<String, String> queryParams = {
-        'clase': widget.clase, // Incluyendo la clase en la solicitud
-      };
-
-      String queryString = Uri(queryParameters: queryParams).query;
-      String url = '$baseUrl?$queryString';
-
-      print('URL: $url');
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final List<dynamic> jsonData = json.decode(response.body);
-
-        // Filtrar las asistencias por clase
-        List<dynamic> asistenciaClase = jsonData
-            .where((element) => element['nombre_clase'] == widget.clase)
-            .toList();
-
-        // Filtrar la asistencia de acuerdo con la fecha seleccionada
-        if (fecha != null && fecha.isNotEmpty) {
-          asistenciaClase = asistenciaClase.where((asistencia) {
-            DateTime parsedDate =
-                DateTime.parse(asistencia['fecha_asistencia']);
-            String formattedDate =
-                '${parsedDate.toIso8601String().split('T')[0]}'; // Solo fecha (YYYY-MM-DD)
-            return formattedDate == fecha; // Comparar solo la parte de la fecha
-          }).toList();
-        }
-
-        List<Estudiante> allEstudiantes = [];
-
-        if (asistenciaClase.isNotEmpty) {
-          for (var asistencia in asistenciaClase) {
-            final List<dynamic> data = asistencia['estudiantes'];
-            allEstudiantes.addAll(data
-                .map(
-                    (json) => Estudiante.fromJson(json, asistencia['id_clase']))
-                .toList());
-            this.fecha = asistencia[
-                'fecha_asistencia']; // Extraer la fecha de asistencia
-            this.idClase = asistencia[
-                'id_clase']; // Almacena el id_clase desde el objeto de asistencia
-          }
-        }
-
-        setState(() {
-          estudiantes = allEstudiantes;
-          isLoading = false;
-        });
-      } else {
-        throw Exception('Failed to load asistencias: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching data: $e');
-      setState(() {
-        estudiantes = [];
-        isLoading = false;
-      });
-    }
-  }
-
-  void handleCheckboxChange(int idUsuario, bool newValue) {
-    setState(() {
-      for (var estudiante in estudiantes) {
-        if (estudiante.idUsuario == idUsuario) {
-          estudiante.presente = newValue ? 'sí' : 'no';
-          break;
-        }
-      }
-    });
-  }
-
-  Future<void> updateAsistencia(List<Estudiante> estudiantes) async {
-    if (estudiantes.isEmpty)
-      return; // Asegúrate de que hay estudiantes antes de continuar
-
-    int idAsistencia = estudiantes[0]
-        .idAsistencia; // Usa el idAsistencia del primer estudiante
-
-    try {
-      String baseUrl =
-          'http://192.168.27.228:4000/api/actualizarasis/$idAsistencia';
-
-      // Verifica que la fecha no sea nula
-      if (fecha == null || fecha!.isEmpty) {
-        print('Error: fecha no está definida.');
-        return; // Salir si la fecha no está definida
-      }
-
-      // Usa el id_clase almacenado desde el objeto de asistencia
-      if (idClase == null) {
-        print('Error: id_clase no está definida.');
-        return; // Salir si el id_clase no está definido
-      }
-
-      // Convertir la fecha a DateTime y formatear
-      DateTime fechaDateTime = DateTime.parse(
-          fecha!); // Asumiendo que `fecha` está en formato 'YYYY-MM-DD'
-      String formattedFecha =
-          '${fechaDateTime.toIso8601String().split('.')[0]}:00'; // Convierte a ISO 8601 y agrega ':00'
-
-      // Mapeo de estudiantes: convertir presente a 1 (sí) o 0 (no)
-      final List<Map<String, dynamic>> updates = estudiantes
-          .map((e) => {
-                'id_usuario': e.idUsuario,
-                'presente': e.presente == 'sí'
-                    ? 1
-                    : 0, // Convertir 'sí' a 1 y cualquier otra cosa a 0
-              })
-          .toList();
-
-      // Debugging: imprimir los datos que se enviarán
-      print('Datos a enviar:');
-      print({
-        'estudiantes': updates,
-        'fecha_asistencia': formattedFecha, // Envía la fecha formateada
-        'id_clase': idClase, // Envía id_clase
-      });
-
-      final response = await http.put(
-        Uri.parse(baseUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode({
-          'estudiantes': updates,
-          'fecha_asistencia': formattedFecha, // Envía la fecha formateada
-          'id_clase': idClase, // Envía id_clase
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Las asistencias se han actualizado correctamente.'),
-            duration: Duration(seconds: 2), // Duración de la SnackBar
-          ),
-        );
-      } else {
-        print('Failed to update asistencia: ${response.statusCode}');
-        print('Response body: ${response.body}');
-        throw Exception('Failed to update asistencia: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error updating data: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.clase),
-      ),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: TextField(
-                    controller: fechaController,
-                    decoration: InputDecoration(
-                      labelText: 'Fecha (YYYY-MM-DD)',
-                      suffixIcon: IconButton(
-                        icon: Icon(Icons.search),
-                        onPressed: () {
-                          String? fecha = fechaController.text.isNotEmpty
-                              ? fechaController.text
-                              : null;
-                          fetchAsistencia(fecha: fecha);
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: estudiantes.isEmpty
-                      ? const Center(
-                          child: Text('Asistencia no encontrada'),
-                        )
-                      : ListView.builder(
-                          itemCount: estudiantes.length,
-                          itemBuilder: (context, index) {
-                            final estudiante = estudiantes[index];
-                            return Card(
-                              child: ListTile(
-                                title: Text(estudiante.nombreUsuario),
-                                trailing: Checkbox(
-                                  value: estudiante.presente == 'sí',
-                                  onChanged: (newValue) {
-                                    handleCheckboxChange(
-                                        estudiante.idUsuario, newValue!);
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    updateAsistencia(estudiantes);
-                  },
-                  child: const Text('Actualizar Asistencia'),
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-class Estudiante {
-  final int idUsuario;
-  final String nombreUsuario;
-  String presente;
-  final int idAsistencia;
-
-  Estudiante({
-    required this.idUsuario,
-    required this.nombreUsuario,
-    required this.presente,
-    required this.idAsistencia,
-  });
-
-  factory Estudiante.fromJson(Map<String, dynamic> json, int idClase) {
-    return Estudiante(
-      idUsuario: json['id_usuario'],
-      nombreUsuario: json['nombre_usuario'],
-      presente: json['presente'] ?? 'no', // Por defecto a 'no'
-      idAsistencia: json['id_asistencia'],
     );
   }
 }

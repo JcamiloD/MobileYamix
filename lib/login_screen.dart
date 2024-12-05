@@ -31,13 +31,13 @@ Future<void> _login() async {
 
   try {
     var response = await http.post(
-      Uri.parse("http://192.168.27.228:4000/api/login"),
+      Uri.parse("http://192.168.1.9:4000/api/login"),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
       },
       body: jsonEncode(<String, String>{
-        'gmail': email,
-        'pass': password,
+        'correo': email,
+        'contraseña': password,
       }),
     );
 
