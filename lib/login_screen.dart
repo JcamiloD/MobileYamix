@@ -224,28 +224,7 @@ void _showErrorDialog(String title, String content) {
                         },
                       ),
                       const SizedBox(height: 20),
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const ForgotPasswordScreen(),
-                            ),
-                          );
-                        },
-                        child: const Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '¿Olvidaste tu contraseña?',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17,
-                              color: Color(0xff281537),
-                            ),
-                          ),
-                        ),
-                      ),
+              
                       const SizedBox(height: 70),
                       GestureDetector(
                         onTap: _login,
