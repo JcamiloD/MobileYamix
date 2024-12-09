@@ -56,7 +56,7 @@ class _AsistenciaScreenState extends State<AsistenciaScreen> {
       }
 
       final response = await http.get(
-        Uri.parse('http://192.168.1.9:4000/api/traerAsistenciaProfe/$userId'),
+        Uri.parse('http://35.199.176.100/api/traerAsistenciaProfe/$userId'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -84,7 +84,7 @@ class _AsistenciaScreenState extends State<AsistenciaScreen> {
 
     final response = await http.put(
       Uri.parse(
-          'http://192.168.1.9:4000/api/actualizar_asistencia_estudiantes'),
+          'http://35.199.176.100/api/actualizar_asistencia_estudiantes'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
         'id_asistencia': selectedAsistencia['id_asistencia'],
@@ -119,7 +119,7 @@ class _AsistenciaScreenState extends State<AsistenciaScreen> {
 
     final response = await http.put(
       Uri.parse(
-          'http://192.168.1.9:4000/api/actualizar_asistencia_estudiantes'),
+          'http://35.199.176.100/api/actualizar_asistencia_estudiantes'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
         'id_asistencia': selectedAsistencia['id_asistencia'],

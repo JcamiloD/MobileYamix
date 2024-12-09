@@ -37,121 +37,134 @@ class _AttendancePageState extends State<AttendancePage> {
     fetchClasses();
   }
 
-Future<void> fetchClasses() async {
-  try {
-    // Obtener el token de SharedPreferences
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('authToken');
-    if (token == null) {
-      throw Exception('Token no encontrado');
-    }
-
-    // Decodificar el token
-    String decodedPayload = utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1])));
-    Map<String, dynamic> payload = jsonDecode(decodedPayload);
-
-    if (!payload.containsKey('id')) {
-      throw Exception('id_usuario no encontrado en el token');
-    }
-
-    String userId = payload['id'].toString();  // Extraemos el id_usuario del token
-
-    // Realizar la petición HTTP solo si el token es válido
-    final response = await http.get(Uri.parse('http://192.168.1.9:4000/api/clasePorUsuario/$userId'));
-
-    if (response.statusCode == 200) {
-      final List<dynamic> classes = json.decode(response.body);
-      setState(() {
-        classIds = {
-          for (var cls in classes)
-            cls['nombre_curso']: cls['id_clase'].toString(),
-        };
-        selectedClassId = classIds.isNotEmpty ? classIds.values.first : null;
-      });
-
-      if (selectedClassId != null) {
-        fetchStudents(selectedClassId!); // Cargar estudiantes para la clase inicial
+  Future<void> fetchClasses() async {
+    try {
+      // Obtener el token de SharedPreferences
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('authToken');
+      if (token == null) {
+        throw Exception('Token no encontrado');
       }
-    } else {
-      throw Exception('Error al cargar las clases');
+
+      // Decodificar el token
+      String decodedPayload = utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1])));
+      Map<String, dynamic> payload = jsonDecode(decodedPayload);
+
+      if (!payload.containsKey('id')) {
+        throw Exception('id_usuario no encontrado en el token');
+      }
+
+      String userId = payload['id'].toString();
+
+      // Realizar la petición HTTP
+      final response = await http.get(Uri.parse('http://35.199.176.100/api/clasePorUsuario/$userId'));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> classes = json.decode(response.body);
+        setState(() {
+          classIds = {
+            for (var cls in classes) cls['nombre_curso']: cls['id_clase'].toString(),
+          };
+          selectedClassId = classIds.isNotEmpty ? classIds.values.first : null;
+        });
+
+        if (selectedClassId != null) {
+          fetchStudents(selectedClassId!);
+        }
+      } else {
+        throw Exception('Error al cargar las clases');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      print('Error al cargar las clases: $e');
     }
+  }
+
+Future<void> fetchStudents(String? classId) async {
+  if (classId == null) {
+    // Manejar el caso en que no se ha seleccionado una clase
+    setState(() {
+      students = [];
+      isLoading = false;
+    });
+    print("Error: No se ha seleccionado una clase.");
+    return;
+  }
+
+  setState(() {
+    isLoading = true;
+  });
+
+  try {
+    final response = await http.get(Uri.parse('http://35.199.176.100/api/claseEstudiante/$classId?fecha_asistencia=${selectedDate}'));
+    print("Estado de la respuesta: ${response.statusCode}");
+    print("Cuerpo de la respuesta: ${response.body}");
+    if (response.statusCode == 200) {
+  final List<dynamic> userData = json.decode(response.body);
+  setState(() {
+    students = userData.map((json) => User.fromJson(json)).toList();
+    isLoading = false;
+  });
+} else {
+  throw Exception('Error al cargar los estudiantes');
+}
+
   } catch (e) {
     setState(() {
       isLoading = false;
     });
-    print('Error al cargar las clases: $e');
+    print('Error al cargar los estudiantes: $e');
   }
 }
 
-
-  Future<void> fetchStudents(String classId) async {
-    setState(() {
-      isLoading = true;
-    });
-
-    final response = await http.get(Uri.parse('http://192.168.1.9:4000/api/claseEstudiante/$classId'));
-
-    if (response.statusCode == 200) {
-      final List<dynamic> userData = json.decode(response.body);
-      setState(() {
-        students = userData.map((json) => User.fromJson(json)).toList();
-        isLoading = false;
-      });
-    } else {
-      setState(() {
-        isLoading = false;
-      });
-      throw Exception('Error al cargar los estudiantes');
-    }
-  }
 
   Future<void> saveAttendance() async {
-  final String formattedDate = "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
+    final String formattedDate = DateFormat('yyyy-MM-dd').format(selectedDate);
 
-  if (students.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No hay estudiantes para guardar la asistencia.')),
-    );
-    return;
-  }
-
-  final Map<String, dynamic> data = {
-    'id_clase': selectedClassId,
-    'fecha_asistencia': formattedDate,
-    'estudiantes': students.map((student) {
-      return {
-        'id_usuario': student.id,
-        'presente': student.present ? 1 : 0,
-      };
-    }).toList(),
-  };
-
-  try {
-    final response = await http.post(
-      Uri.parse('http://192.168.1.9:4000/api/crear_asistencia'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(data),
-    );
-
-    if (response.statusCode == 201) {
+    if (students.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Asistencia guardada correctamente')),
+        SnackBar(content: Text('No hay estudiantes para guardar la asistencia.')),
       );
-    } else {
-      // Extraer el mensaje de error de la respuesta y mostrarlo
-      final Map<String, dynamic> responseData = json.decode(response.body);
-      final String errorMessage = responseData['message'] ?? 'Error desconocido';
+      return;
+    }
+
+    final Map<String, dynamic> data = {
+      'id_clase': selectedClassId,
+      'fecha_asistencia': formattedDate,
+      'estudiantes': students.map((student) {
+        return {
+          'id_usuario': student.id,
+          'presente': student.present ? 1 : 0,
+        };
+      }).toList(),
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse('http://35.199.176.100/api/crear_asistencia'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Asistencia guardada correctamente')),
+        );
+      } else {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        final String errorMessage = responseData['message'] ?? 'Error desconocido';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
+        SnackBar(content: Text('Error al comunicarse con el servidor: $e')),
       );
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error al comunicarse con el servidor: $e')),
-    );
   }
-}
-
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -164,6 +177,10 @@ Future<void> fetchClasses() async {
       setState(() {
         selectedDate = picked;
       });
+
+      if (selectedClassId != null) {
+        fetchStudents(selectedClassId!);
+      }
     }
   }
 
@@ -245,9 +262,7 @@ class User {
   final int id;
   final String nombre;
   final String apellido;
-  final String gmail;
-  final String contrasena;
-  final String roll;
+  final String correo;
   final String clase;
   bool present;
 
@@ -255,22 +270,18 @@ class User {
     required this.id,
     required this.nombre,
     required this.apellido,
-    required this.gmail,
-    required this.contrasena,
-    required this.roll,
+    required this.correo,
     required this.clase,
     this.present = false,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id_usuario'] ?? 0,
-      nombre: json['nombre'] ?? '',
-      apellido: json['apellido'] ?? '',
-      gmail: json['gmail'] ?? '',
-      contrasena: json['contrasena'] ?? '',
-      roll: json['roll'] ?? '',
-      clase: json['nombre_clase'] ?? '',
+      id: json['id_usuario'] ?? 0, // Manejo de nulos
+      nombre: json['nombre'] ?? 'Sin nombre', // Valor predeterminado
+      apellido: json['apellido'] ?? 'Sin apellido',
+      correo: json['correo'] ?? 'Sin correo',
+      clase: json['clase'] ?? 'Sin clase',
     );
   }
 }
